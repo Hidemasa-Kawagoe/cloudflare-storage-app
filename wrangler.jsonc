@@ -1,0 +1,43 @@
+{
+	"name": "cloudflare-storage-app",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-09-01",
+	"compatibility_flags": [
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS",
+		"html_handling": "auto-trailing-slash",
+		"run_worker_first": [
+			"/api/*"
+		]
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "cf_storage_app_d1",
+			"database_id": "d55d2492-eae4-4792-b4a6-3e6f1c5c6a68"
+		}
+	],
+	"r2_buckets": [
+		{
+			"bucket_name": "storage-app-files",
+			"binding": "FILES"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "SESSIONS",
+			"id": "06bf68df05ad4c6da3e7a9776f3cb46a"
+		}
+	],
+	"triggers": {
+		"crons": [
+			"0 18 * * *"
+		]
+	},
+	"observability": {
+		"enabled": true
+	}
+}
