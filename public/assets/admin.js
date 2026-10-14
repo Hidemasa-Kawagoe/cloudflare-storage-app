@@ -1,4 +1,4 @@
-import { api, confirmDialog, fmtDate, fmtSize, h, logout, modal, requireLogin, toast } from './common.js';
+import { api, confirmDialog, fmtDate, fmtSize, h, logout, modal, pager, requireLogin, toast } from './common.js';
 
 const me = await requireLogin('/admin/login', true);
 if (!me) throw new Error('redirect');
@@ -8,7 +8,7 @@ document.getElementById('logout').onclick = () => logout('/admin/login');
 const root = document.getElementById('root');
 const run = async (fn) => { try { return await fn(); } catch (e) { toast(e.message, true); } };
 let tab = 'users';
-const fstate = { userId: '', folderId: 'root', users: [] };
+const fstate = { userId: '', folderId: 'root', users: [], page: 1, limit: 50 };
 
 function shell(body) {
 	const tabs = h('div', { class: 'tabs' },
@@ -27,7 +27,7 @@ async function showUsers() {
 		h('td', { class: 'hide-s' }, `${u.fileCount} 件 / ${fmtSize(u.usedBytes)}`), h('td', { class: 'hide-s' }, fmtDate(u.createdAt)),
 		h('td', { class: 'actions' },
 			h('button', { class: 'sm', onclick: () => userForm(u) }, '編集'),
-			h('button', { class: 'sm', onclick: () => { fstate.userId = u.id; fstate.folderId = 'root'; tab = 'files'; showFiles(); } }, 'ファイル'),
+			h('button', { class: 'sm', onclick: () => { fstate.userId = u.id; fstate.folderId = 'root'; fstate.page = 1; tab = 'files'; showFiles(); } }, 'ファイル'),
 			h('button', { class: 'sm danger', disabled: u.id === me.id, onclick: () => delUser(u) }, '削除'))));
 	shell(h('div', {},
 		h('div', { class: 'toolbar' }, h('button', { class: 'primary', onclick: () => userForm(null) }, '＋ ユーザー登録')),
@@ -67,13 +67,15 @@ async function delUser(u) {
 async function showFiles() {
 	if (!fstate.users.length) fstate.users = (await run(() => api('/admin/users')))?.users ?? [];
 	if (!fstate.userId) fstate.userId = fstate.users[0]?.id ?? '';
-	const sel = h('select', { 'aria-label': 'ユーザー', onchange: () => { fstate.userId = sel.value; fstate.folderId = 'root'; showFiles(); } },
+	const sel = h('select', { 'aria-label': 'ユーザー', onchange: () => { fstate.userId = sel.value; fstate.folderId = 'root'; fstate.page = 1; showFiles(); } },
 		fstate.users.map((u) => h('option', { value: u.id, selected: u.id === fstate.userId }, `${u.displayName} <${u.email}>`)));
 	if (!fstate.userId) return shell(h('p', { class: 'muted' }, 'ユーザーがいません'));
 
-	const d = await run(() => api(`/admin/users/${fstate.userId}/tree?folderId=${fstate.folderId}`));
+	const d = await run(() => api(`/admin/users/${fstate.userId}/tree?folderId=${fstate.folderId}&page=${fstate.page}&limit=${fstate.limit}`));
 	if (!d) { fstate.folderId = 'root'; return shell(sel); }
-	const go = (id) => { fstate.folderId = id; showFiles(); };
+	const go = (id) => { fstate.folderId = id; fstate.page = 1; showFiles(); };
+	fstate.page = d.paging.page;
+	const pg = () => pager(d.paging, ({ page, limit }) => { Object.assign(fstate, { page, limit }); showFiles(); });
 	const crumbs = h('nav', { class: 'crumbs' }, h('a', { onclick: () => go('root') }, 'トップ'),
 		d.breadcrumbs.map((b) => [h('span', { class: 'sep' }, '›'), h('a', { onclick: () => go(b.id) }, b.name)]));
 	const rows = [
@@ -87,9 +89,9 @@ async function showFiles() {
 				h('button', { class: 'sm', onclick: () => lock(f) }, f.isLocked ? '🔓 ロック解除' : '🔒 編集ロック'), ' ',
 				h('button', { class: 'sm danger', onclick: () => delFile(f) }, '削除')))),
 	];
-	shell(h('div', {}, h('div', { class: 'toolbar' }, sel), crumbs,
+	shell(h('div', {}, h('div', { class: 'toolbar' }, sel), crumbs, pg(),
 		h('table', {}, h('thead', {}, h('tr', {}, ['名前', 'サイズ', '更新日時', ''].map((t, i) => h('th', { class: i === 1 ? 'hide-s' : '' }, t)))), h('tbody', {}, rows)),
-		rows.length ? null : h('p', { class: 'muted' }, 'ファイルがありません')));
+		rows.length ? null : h('p', { class: 'muted' }, 'ファイルがありません'), pg()));
 }
 
 async function lock(f) {

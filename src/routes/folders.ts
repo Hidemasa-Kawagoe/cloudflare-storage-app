@@ -16,7 +16,7 @@ folders.get('/', async (c) => {
 folders.get('/:id/children', async (c) => {
 	const id = c.req.param('id');
 	const q = c.req.query();
-	return c.json(await listChildren(c.env, c.get('user').id, id === 'root' ? null : id, q.sort, q.order));
+	return c.json(await listChildren(c.env, c.get('user').id, id === 'root' ? null : id, q.sort, q.order, Number(q.page), Number(q.limit)));
 });
 
 folders.post('/', async (c) => {

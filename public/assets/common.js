@@ -142,3 +142,26 @@ export function loginForm(endpoint, redirect, title) {
 		h('p', {}, h('a', { href: '/' }, '← トップへ')));
 	document.getElementById('root').append(h('div', { class: 'card' }, form));
 }
+
+/** ページャ。paging = {page, limit, total, totalPages}。onChange({page, limit}) */
+export function pager(paging, onChange, sizes = [25, 50, 100]) {
+	if (paging.total <= Math.min(...sizes)) return null;
+	const { page, limit, total, totalPages } = paging;
+	const btn = (label, p, disabled, cur) =>
+		h('button', { class: 'sm' + (cur ? ' primary' : ''), disabled, 'aria-label': `${p}ページ`, 'aria-current': cur ? 'page' : false, onclick: () => onChange({ page: p, limit }) }, label);
+	const nums = [];
+	const near = new Set([1, totalPages, page - 1, page, page + 1]);
+	let last = 0;
+	for (let p = 1; p <= totalPages; p++) {
+		if (!near.has(p)) continue;
+		if (p - last > 1) nums.push(h('span', { class: 'muted' }, '…'));
+		nums.push(btn(String(p), p, false, p === page));
+		last = p;
+	}
+	const sel = h('select', { 'aria-label': '1ページの表示件数', onchange: () => onChange({ page: 1, limit: Number(sel.value) }) },
+		sizes.map((n) => h('option', { value: n, selected: n === limit }, `${n}件/ページ`)));
+	const from = (page - 1) * limit + 1;
+	return h('div', { class: 'pager' },
+		h('span', { class: 'muted' }, `全 ${total} 件中 ${from}–${Math.min(total, page * limit)} 件`),
+		btn('‹ 前へ', page - 1, page <= 1), nums, btn('次へ ›', page + 1, page >= totalPages), sel);
+}

@@ -133,7 +133,7 @@ admin.get('/users/:id/tree', async (c) => {
 	await getUser(c.env, id);
 	const fid = c.req.query('folderId');
 	const q = c.req.query();
-	return c.json(await listChildren(c.env, id, fid && fid !== 'root' ? fid : null, q.sort, q.order));
+	return c.json(await listChildren(c.env, id, fid && fid !== 'root' ? fid : null, q.sort, q.order, Number(q.page), Number(q.limit)));
 });
 
 admin.get('/files/:id/content', async (c) => {

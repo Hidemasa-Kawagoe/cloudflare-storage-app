@@ -1,4 +1,4 @@
-import { api, confirmDialog, fmtDate, fmtSize, h, logout, modal, promptDialog, requireLogin, toast } from './common.js';
+import { api, confirmDialog, fmtDate, fmtSize, h, logout, modal, pager, promptDialog, requireLogin, toast } from './common.js';
 
 const user = await requireLogin('/login');
 if (!user) throw new Error('redirect');
@@ -13,6 +13,8 @@ const state = {
 	view: pref('view', 'list'),
 	sort: pref('sort', 'name'),
 	order: pref('order', 'asc'),
+	page: Number(new URLSearchParams(location.search).get('page')) || 1,
+	limit: Number(pref('limit', '50')),
 	data: null,
 };
 const root = document.getElementById('root');
@@ -23,17 +25,23 @@ const run = async (fn) => { try { return await fn(); } catch (e) { toast(e.messa
 
 async function load(pushState = true) {
 	try {
-		state.data = await api(`/folders/${state.folderId}/children?sort=${state.sort}&order=${state.order}`);
+		state.data = await api(`/folders/${state.folderId}/children?sort=${state.sort}&order=${state.order}&page=${state.page}&limit=${state.limit}`);
+		state.page = state.data.paging.page;
 	} catch (e) {
 		if (e.status === 404 && state.folderId !== 'root') { state.folderId = 'root'; return load(); }
 		toast(e.message, true);
 		return;
 	}
-	if (pushState) history.replaceState(null, '', state.folderId === 'root' ? '/app' : `/app?folder=${state.folderId}`);
+	if (pushState) {
+		const q = new URLSearchParams();
+		if (state.folderId !== 'root') q.set('folder', state.folderId);
+		if (state.page > 1) q.set('page', state.page);
+		history.replaceState(null, '', '/app' + (q.size ? `?${q}` : ''));
+	}
 	render();
 }
 
-function go(id) { state.folderId = id; load(); }
+function go(id) { state.folderId = id; state.page = 1; load(); }
 
 const icon = (f) => (f.kind === 'image' ? '🖼️' : '📄');
 
@@ -42,7 +50,7 @@ function render() {
 	const crumbs = h('nav', { class: 'crumbs', 'aria-label': 'パンくず' }, h('a', { onclick: () => go('root') }, 'トップ'),
 		d.breadcrumbs.map((b) => [h('span', { class: 'sep' }, '›'), h('a', { onclick: () => go(b.id) }, b.name)]));
 
-	const sortSel = h('select', { 'aria-label': '並び替え', onchange: () => { state.sort = sortSel.value; setPref('sort', state.sort); load(false); } },
+	const sortSel = h('select', { 'aria-label': '並び替え', onchange: () => { state.sort = sortSel.value; setPref('sort', state.sort); state.page = 1; load(); } },
 		[['name', '名前'], ['updated', '更新日時'], ['size', 'サイズ']].map(([v, l]) => h('option', { value: v, selected: v === state.sort }, l)));
 	const toolbar = h('div', { class: 'toolbar' },
 		h('button', { class: 'primary', onclick: () => fileInput.click() }, '⬆ アップロード'),
@@ -50,12 +58,18 @@ function render() {
 		h('button', { onclick: newFolder }, '＋ フォルダ'),
 		h('span', { class: 'grow' }),
 		sortSel,
-		h('button', { title: '昇順/降順', onclick: () => { state.order = state.order === 'asc' ? 'desc' : 'asc'; setPref('order', state.order); load(false); } }, state.order === 'asc' ? '↑' : '↓'),
+		h('button', { title: '昇順/降順', onclick: () => { state.order = state.order === 'asc' ? 'desc' : 'asc'; setPref('order', state.order); state.page = 1; load(); } }, state.order === 'asc' ? '↑' : '↓'),
 		h('button', { class: state.view === 'list' ? 'primary' : '', onclick: () => setView('list') }, '≡ 詳細'),
 		h('button', { class: state.view === 'grid' ? 'primary' : '', onclick: () => setView('grid') }, '▦ サムネイル'));
 
 	const empty = !d.folders.length && !d.files.length ? h('p', { class: 'muted' }, 'このフォルダは空です。ファイルをドラッグ＆ドロップしてアップロードできます。') : null;
-	root.replaceChildren(crumbs, toolbar, state.view === 'list' ? listView(d) : gridView(d), empty);
+	const pg = () => pager(d.paging, ({ page, limit }) => {
+		if (limit !== state.limit) setPref('limit', limit);
+		Object.assign(state, { page, limit });
+		load();
+		scrollTo(0, 0);
+	});
+	root.replaceChildren(crumbs, toolbar, pg(), state.view === 'list' ? listView(d) : gridView(d), empty, pg());
 }
 
 function setView(v) { state.view = v; setPref('view', v); render(); }
@@ -245,5 +259,5 @@ async function previewText(f) {
 	if (editable) ta.focus();
 }
 
-addEventListener('popstate', () => { state.folderId = new URLSearchParams(location.search).get('folder') || 'root'; load(false); });
+addEventListener('popstate', () => { const q = new URLSearchParams(location.search); state.folderId = q.get('folder') || 'root'; state.page = Number(q.get('page')) || 1; load(false); });
 await load(false);

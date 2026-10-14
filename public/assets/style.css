@@ -59,3 +59,4 @@ tr:last-child td{border-bottom:0}
 .tree-list div:hover,.tree-list div.sel{background:var(--bg);outline:1px solid var(--accent)}
 @media(max-width:640px){.hide-s{display:none}}
 .card-title{font-size:20px;margin-top:0}
+.pager{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:12px 0}.pager .muted{margin-right:auto}.pager select{width:auto}

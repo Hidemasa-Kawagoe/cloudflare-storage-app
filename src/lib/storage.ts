@@ -96,7 +96,10 @@ export async function subtree(env: Env, ownerId: string, folderId: string): Prom
 
 const SORTS: Record<string, string> = { name: 'name COLLATE NOCASE', updated: 'updated_at', size: 'size_bytes' };
 
-export async function listChildren(env: Env, ownerId: string, folderId: string | null, sort = 'name', order = 'asc') {
+export const PAGE_SIZES = [25, 50, 100];
+
+/** フォルダ → ファイルの順に連結した一覧を page/limit で切り出して返す */
+export async function listChildren(env: Env, ownerId: string, folderId: string | null, sort = 'name', order = 'asc', pageRaw = 1, limitRaw = 50) {
 	let folder: FolderRow | null = null;
 	const breadcrumbs: { id: string; name: string }[] = [];
 	if (folderId) {
@@ -107,22 +110,42 @@ export async function listChildren(env: Env, ownerId: string, folderId: string |
 			cur = cur.parent_id ? await getFolder(env, ownerId, cur.parent_id) : null;
 		}
 	}
+	const limit = PAGE_SIZES.includes(Number(limitRaw)) ? Number(limitRaw) : 50;
 	const col = SORTS[sort] ?? SORTS.name;
 	const dir = order === 'desc' ? 'DESC' : 'ASC';
 	const folderCol = sort === 'updated' ? 'updated_at' : 'name COLLATE NOCASE';
+
+	const [fc, fic] = await Promise.all([
+		env.DB.prepare(`SELECT COUNT(*) AS n FROM folders WHERE owner_id = ?1 AND COALESCE(parent_id,'') = COALESCE(?2,'')`).bind(ownerId, folderId).first<{ n: number }>(),
+		env.DB.prepare(`SELECT COUNT(*) AS n FROM files WHERE owner_id = ?1 AND COALESCE(folder_id,'') = COALESCE(?2,'')`).bind(ownerId, folderId).first<{ n: number }>(),
+	]);
+	const nFolders = fc?.n ?? 0;
+	const total = nFolders + (fic?.n ?? 0);
+	const totalPages = Math.max(1, Math.ceil(total / limit));
+	const page = Math.min(Math.max(1, Math.floor(Number(pageRaw)) || 1), totalPages);
+	const offset = (page - 1) * limit;
+
+	const fLimit = Math.max(0, Math.min(limit, nFolders - offset));
+	const fileLimit = limit - fLimit;
+	const fileOffset = Math.max(0, offset - nFolders);
 	const [folders, files] = await Promise.all([
-		env.DB.prepare(`SELECT * FROM folders WHERE owner_id = ?1 AND COALESCE(parent_id,'') = COALESCE(?2,'') ORDER BY ${folderCol} ${dir}`)
-			.bind(ownerId, folderId)
-			.all<FolderRow>(),
-		env.DB.prepare(`${FILE_SELECT} WHERE f.owner_id = ?1 AND COALESCE(f.folder_id,'') = COALESCE(?2,'') ORDER BY f.${col} ${dir}`)
-			.bind(ownerId, folderId)
-			.all<FileRow>(),
+		fLimit > 0
+			? env.DB.prepare(`SELECT * FROM folders WHERE owner_id = ?1 AND COALESCE(parent_id,'') = COALESCE(?2,'') ORDER BY ${folderCol} ${dir}, id LIMIT ?3 OFFSET ?4`)
+					.bind(ownerId, folderId, fLimit, offset)
+					.all<FolderRow>()
+			: Promise.resolve({ results: [] as FolderRow[] }),
+		fileLimit > 0
+			? env.DB.prepare(`${FILE_SELECT} WHERE f.owner_id = ?1 AND COALESCE(f.folder_id,'') = COALESCE(?2,'') ORDER BY f.${col} ${dir}, f.id LIMIT ?3 OFFSET ?4`)
+					.bind(ownerId, folderId, fileLimit, fileOffset)
+					.all<FileRow>()
+			: Promise.resolve({ results: [] as FileRow[] }),
 	]);
 	return {
 		folder: folder ? folderDto(folder) : null,
 		breadcrumbs,
 		folders: folders.results.map(folderDto),
 		files: files.results.map(fileDto),
+		paging: { page, limit, total, totalPages },
 	};
 }
 
